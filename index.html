@@ -56,7 +56,7 @@
   <div style="margin-bottom:8px"><b>Step 1 — Choose a role:</b></div>
   <button id="btnHost" class="primary">Host a game</button>
   <span style="margin:0 8px">or</span>
-  Join code: <input id="joinCode" placeholder="e.g. cabo-abc123" />
+  Join code: <input id="joinCode" placeholder="6-digit code" inputmode="numeric" />
   <button id="btnJoin">Join</button>
   <div id="lobbyStatus" style="margin-top:10px; font-size:13px; color:#777;"></div>
 </div>
@@ -143,9 +143,10 @@
 
   $('btnHost').onclick = () => {
     role = 'host'; mySeat = 0;
-    const roomId = 'cabo-' + Math.random().toString(36).slice(2,8);
+    const num = String(Math.floor(100000 + Math.random() * 900000));
+    const roomId = 'cabo-' + num;
     peer = new Peer(roomId);
-    peer.on('open', id => setLobbyStatus(`You are the host. Share this code with your friend: <code>${id}</code><br>Waiting for them to join…`));
+    peer.on('open', id => setLobbyStatus(`You are the host. Share this code with your friend: <code>${num}</code><br>Waiting for them to join…`));
     peer.on('error', e => setLobbyStatus(`Error: ${e.type}. Try a different code or reload.`));
     peer.on('connection', c => {
       conn = c;
@@ -160,8 +161,10 @@
   };
 
   $('btnJoin').onclick = () => {
-    const code = $('joinCode').value.trim();
+    let code = $('joinCode').value.trim();
     if (!code) return;
+    // Accept bare digits — auto-prefix "cabo-"
+    if (/^\d+$/.test(code)) code = 'cabo-' + code;
     role = 'guest';
     peer = new Peer();
     peer.on('open', () => {
