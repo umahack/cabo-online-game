@@ -74,6 +74,7 @@
     <button id="btnDeal" class="primary">Deal</button>
     <button id="btnDraw" disabled>Draw</button>
     <button id="btnPlay" disabled>Play special</button>
+    <button id="btnSwap" disabled>Swap with my card</button>
     <button id="btnDiscardBtn" disabled>Discard</button>
     <button id="btnMatch" disabled>Match discard</button>
     <button id="btnSnap" disabled>Snap!</button>
@@ -299,6 +300,24 @@
       case 'match-start': {
         if (state.phase !== 'drawn') return;
         state.phase = 'match-select';
+        break;
+      }
+      case 'swap-start': {
+        if (state.phase !== 'drawn') return;
+        state.phase = 'swap-select';
+        break;
+      }
+      case 'swap-pick': {
+        if (state.phase !== 'swap-select' && state.phase !== 'drawn') return;
+        const idx = action.idx;
+        const slot = state.hands[seat][idx];
+        if (!slot) return;
+        const old = slot.card;
+        slot.card = state.drawn;
+        state.discard.push(old);
+        broadcastLog(`${who(seat)} swapped slot ${idx} (discarded <b>${label(old)}</b>).`);
+        state.drawn = null;
+        endTurn();
         break;
       }
       case 'match-pick': {
@@ -577,6 +596,7 @@
     const canPlay = amITurn && view.phase === 'drawn' && isSpecial(view.drawn || {rank:0});
     const canDiscard = amITurn && view.phase === 'drawn';
     const canMatch = amITurn && view.phase === 'drawn';
+    const canSwap = amITurn && view.phase === 'drawn';
     const canSnap = view.phase !== 'idle' && view.phase !== 'round-end';
     const canCabo = amITurn && view.phase === 'awaiting-draw' && view.caboCalledBy === null;
     const inPeekDone = view.phase === 'special' && amITurn;
@@ -586,6 +606,7 @@
     $('btnPlay').disabled = !canPlay;
     $('btnDiscardBtn').disabled = !canDiscard;
     $('btnMatch').disabled = !canMatch;
+    $('btnSwap').disabled = !canSwap;
     $('btnSnap').disabled = !canSnap;
     $('btnCabo').disabled = !canCabo;
     $('btnEndSpecial').disabled = !inPeekDone;
@@ -603,6 +624,8 @@
       setPrompt(amITurn ? `You drew <b>${label(view.drawn)}</b>. Click your card to swap, or Discard / Match / Play special.` : 'Opponent drew a card.');
     } else if (view.phase === 'match-select') {
       setPrompt(amITurn ? 'Pick one of <b>your</b> cards to match.' : "Opponent is matching.");
+    } else if (view.phase === 'swap-select') {
+      setPrompt(amITurn ? 'Pick one of <b>your</b> slots to swap the drawn card in. (Opponent sees only the discarded card.)' : "Opponent is swapping.");
     } else if (view.phase === 'special') {
       setPrompt(amITurn ? 'Specials in progress — pick a target.' : "Opponent is using a special.");
     }
@@ -655,6 +678,7 @@
   $('btnDiscardBtn').onclick = () => send2({type:'discard'});
   $('btnPlay').onclick = () => send2({type:'play-special'});
   $('btnMatch').onclick = () => send2({type:'match-start'});
+  $('btnSwap').onclick = () => send2({type:'swap-start'});
   $('btnCabo').onclick = () => send2({type:'cabo'});
   $('btnEndSpecial').onclick = () => send2({type:'end-special'});
   $('btnSnap').onclick = () => {
@@ -667,8 +691,8 @@
 
   function onCardClick(side, idx) {
     if (view.turn !== mySeat) return;
-    if (view.phase === 'drawn' && side === 'me') {
-      send2({type:'swap', idx});
+    if ((view.phase === 'drawn' || view.phase === 'swap-select') && side === 'me') {
+      send2({type:'swap-pick', idx});
     } else if (view.phase === 'match-select' && side === 'me') {
       send2({type:'match-pick', idx});
     } else if (view.phase === 'special') {
