@@ -55,7 +55,8 @@
 <div class="sub">Peer-to-peer. Share this HTML file with your friend; one hosts, other joins via room code.</div>
 
 <div id="lobby">
-  <div style="margin-bottom:8px"><b>Step 1 — Choose a role:</b></div>
+  <div style="margin-bottom:8px"><b>Your name:</b> <input id="playerName" placeholder="e.g. Alex" maxlength="16" style="width:160px" /></div>
+  <div style="margin-bottom:8px"><b>Then:</b></div>
   <button id="btnHost" class="primary">Host a game</button>
   <span style="margin:0 8px">or</span>
   Join code: <input id="joinCode" placeholder="6-digit code" inputmode="numeric" />
@@ -86,11 +87,11 @@
 
   <div class="board">
     <div class="seat" id="seatMe">
-      <h2>You <span class="score">Total: <span id="myScore">0</span></span></h2>
+      <h2><span id="myName">You</span> <span class="score">Total: <span id="myScore">0</span></span></h2>
       <div class="hand" id="myHand"></div>
     </div>
     <div class="seat" id="seatOpp">
-      <h2>Opponent <span class="score">Total: <span id="oppScore">0</span></span></h2>
+      <h2><span id="oppName">Opponent</span> <span class="score">Total: <span id="oppScore">0</span></span></h2>
       <div class="hand" id="oppHand"></div>
     </div>
   </div>
@@ -139,24 +140,30 @@
   let peer = null, conn = null;
   let role = null;        // 'host' | 'guest'
   let mySeat = -1;        // 0 or 1
+  let names = ['Player 1','Player 2'];
+  function sanitizeName(n) { return (n || '').trim().slice(0,16) || null; }
   const $ = id => document.getElementById(id);
 
   function setLobbyStatus(s) { $('lobbyStatus').innerHTML = s; }
   function showGame() { $('lobby').classList.add('hidden'); $('game').classList.remove('hidden'); }
 
   $('btnHost').onclick = () => {
+    const n = sanitizeName($('playerName').value);
+    if (!n) { setLobbyStatus('Please enter your name first.'); return; }
+    names[0] = n;
     role = 'host'; mySeat = 0;
     const num = String(Math.floor(100000 + Math.random() * 900000));
     const roomId = 'cabo-' + num;
     peer = new Peer(roomId);
-    peer.on('open', id => setLobbyStatus(`You are the host. Share this code with your friend: <code>${num}</code><br>Waiting for them to join…`));
+    peer.on('open', id => setLobbyStatus(`Hi <b>${n}</b>! Share this code with your friend: <code>${num}</code><br>Waiting for them to join…`));
     peer.on('error', e => setLobbyStatus(`Error: ${e.type}. Try a different code or reload.`));
     peer.on('connection', c => {
       conn = c;
+      names[1] = sanitizeName(c.metadata && c.metadata.name) || 'Player 2';
       c.on('open', () => {
-        setLobbyStatus('Friend connected! Starting…');
+        setLobbyStatus(`${names[1]} connected! Starting…`);
         setTimeout(() => { showGame(); hostInit(); }, 400);
-        send({type:'init', seat: 1});
+        send({type:'init', seat: 1, names});
       });
       c.on('data', msg => hostHandleGuest(msg));
       c.on('close', () => setPrompt('Opponent disconnected.'));
@@ -164,6 +171,9 @@
   };
 
   $('btnJoin').onclick = () => {
+    const n = sanitizeName($('playerName').value);
+    if (!n) { setLobbyStatus('Please enter your name first.'); return; }
+    names[1] = n;
     let code = $('joinCode').value.trim();
     if (!code) return;
     // Accept bare digits — auto-prefix "cabo-"
@@ -172,7 +182,7 @@
     peer = new Peer();
     peer.on('open', () => {
       setLobbyStatus('Connecting to host…');
-      conn = peer.connect(code, {reliable: true});
+      conn = peer.connect(code, {reliable: true, metadata: {name: n}});
       conn.on('open', () => {
         setLobbyStatus('Connected! Waiting for host to deal.');
         showGame();
@@ -257,10 +267,12 @@
     send({type:'log', text});
   }
   // Personalized: actorSeat 0 = host, 1 = guest. youText shown to actor, oppText to the other.
+  // oppText may contain "{name}" which is replaced with the actor's name.
   function logByActor(actorSeat, youText, oppText) {
-    // Host (always running this) is seat 0
-    logMsg(actorSeat === 0 ? youText : oppText);
-    send({type:'log', text: actorSeat === 1 ? youText : oppText});
+    const actorName = names[actorSeat] || who(actorSeat);
+    const oppResolved = oppText.replaceAll('{name}', actorName);
+    logMsg(actorSeat === 0 ? youText : oppResolved);
+    send({type:'log', text: actorSeat === 1 ? youText : oppResolved});
   }
 
   function sendRevealToSeat(seat, items, ms) {
@@ -291,7 +303,7 @@
         state.discard.push(c);
         logByActor(seat,
           `You discarded <b>${label(c)}</b>.`,
-          `Opponent discarded <b>${label(c)}</b>.`);
+          `{name} discarded <b>${label(c)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -306,7 +318,7 @@
         state.discard.push(old);
         logByActor(seat,
           `You swapped your slot ${idx} — discarded <b>${label(old)}</b>.`,
-          `Opponent swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
+          `{name} swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -331,7 +343,7 @@
         state.discard.push(old);
         logByActor(seat,
           `You swapped your slot ${idx} — discarded <b>${label(old)}</b>.`,
-          `Opponent swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
+          `{name} swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -346,14 +358,14 @@
           state.discard.push(state.drawn);
           logByActor(seat,
             `✅ You match-discarded your slot ${idx} (<b>${label(slot.card)}</b>) + your draw.`,
-            `✅ Opponent match-discarded slot ${idx} (<b>${label(slot.card)}</b>) + their draw.`);
+            `✅ {name} match-discarded slot ${idx} (<b>${label(slot.card)}</b>) + their draw.`);
           state.hands[seat][idx] = null;
         } else {
           const drawn = state.drawn;
           state.discard.push(drawn);
           logByActor(seat,
             `❌ You missed the match. Your slot ${idx} was <b>${label(slot.card)}</b>. +1 penalty card.`,
-            `❌ Opponent missed the match. Slot ${idx} was <b>${label(slot.card)}</b>. They get a penalty card.`);
+            `❌ {name} missed the match. Slot ${idx} was <b>${label(slot.card)}</b>. They get a penalty card.`);
           const c = state.deck.pop();
           if (c) state.hands[seat].push({ card: c });
         }
@@ -368,7 +380,7 @@
         state.drawn = null;
         logByActor(seat,
           `You played special <b>${label(c)}</b> — ${specialName(c)}.`,
-          `Opponent played special <b>${label(c)}</b> — ${specialName(c)}.`);
+          `{name} played special <b>${label(c)}</b> — ${specialName(c)}.`);
         if (c.rank === 7 || c.rank === 8) { state.phase = 'special'; state.specialMode = 'peek'; }
         else if (c.rank === 9 || c.rank === 10) { state.phase = 'special'; state.specialMode = 'spy'; }
         else if (c.rank === 11 || c.rank === 12) { state.phase = 'special'; state.specialMode = 'blindswap-mine'; state.blindMine = null; }
@@ -441,12 +453,12 @@
           state.discard.push(slot.card);
           logByActor(seat,
             `✅ You snapped your slot ${idx} (<b>${label(slot.card)}</b>).`,
-            `✅ Opponent snapped slot ${idx} (<b>${label(slot.card)}</b>).`);
+            `✅ {name} snapped slot ${idx} (<b>${label(slot.card)}</b>).`);
           state.hands[seat][idx] = null;
         } else {
           logByActor(seat,
             `❌ You bad-snapped slot ${idx} (was <b>${label(slot.card)}</b>). +1 penalty.`,
-            `❌ Opponent bad-snapped slot ${idx} (was <b>${label(slot.card)}</b>). They get a penalty card.`);
+            `❌ {name} bad-snapped slot ${idx} (was <b>${label(slot.card)}</b>). They get a penalty card.`);
           const c = state.deck.pop();
           if (c) state.hands[seat].push({ card: c });
         }
@@ -458,7 +470,7 @@
         state.lastCaboTurn = seat;
         logByActor(seat,
           `<b>You called Cabo!</b>`,
-          `<b>Opponent called Cabo!</b>`);
+          `<b>{name} called Cabo!</b>`);
         endTurn();
         break;
       }
@@ -533,8 +545,7 @@
   }
 
   function who(seat) {
-    // For log, name both sides neutrally
-    return seat === 0 ? 'Host' : 'Guest';
+    return names[seat] || (seat === 0 ? 'Host' : 'Guest');
   }
 
   function hostHandleGuest(msg) {
@@ -590,7 +601,7 @@
 
   function guestHandleHost(msg) {
     if (!msg || !msg.type) return;
-    if (msg.type === 'init') { mySeat = msg.seat; }
+    if (msg.type === 'init') { mySeat = msg.seat; if (msg.names) names = msg.names; }
     else if (msg.type === 'state') doApplyView(msg);
     else if (msg.type === 'log') logMsg(msg.text);
     else if (msg.type === 'reveal') applyReveal(msg);
@@ -598,6 +609,7 @@
 
   // ---------- Rendering ----------
   function setPrompt(m) { $('prompt').innerHTML = m; }
+  function oppName() { return mySeat >= 0 ? names[1 - mySeat] : 'Opponent'; }
   function logMsg(m) {
     const p = document.createElement('p');
     p.innerHTML = m;
@@ -624,6 +636,10 @@
 
     $('myScore').textContent = view.scores[mySeat] ?? 0;
     $('oppScore').textContent = view.scores[1 - mySeat] ?? 0;
+    if (mySeat >= 0) {
+      $('myName').textContent = names[mySeat] + ' (you)';
+      $('oppName').textContent = names[1 - mySeat];
+    }
 
     const canDeal = (view.phase === 'idle' || view.phase === 'round-end') && role === 'host';
     const canDraw = amITurn && view.phase === 'awaiting-draw';
@@ -653,24 +669,24 @@
     } else if (view.phase === 'round-end') {
       setPrompt(role === 'host' ? 'Round complete. Click <b>Deal</b> for next.' : 'Round complete. Waiting on host…');
     } else if (view.phase === 'awaiting-draw') {
-      setPrompt(amITurn ? 'Your turn. <b>Draw</b> or call <b>Cabo</b>.' : "Opponent's turn.");
+      setPrompt(amITurn ? 'Your turn. <b>Draw</b> or call <b>Cabo</b>.' : `${oppName()}'s turn.`);
     } else if (view.phase === 'drawn') {
-      setPrompt(amITurn ? `You drew <b>${label(view.drawn)}</b>. Click your card to swap, or Discard / Match / Play special.` : 'Opponent drew a card.');
+      setPrompt(amITurn ? `You drew <b>${label(view.drawn)}</b>. Click your card to swap, or Discard / Match / Play special.` : `${oppName()} drew a card.`);
     } else if (view.phase === 'match-select') {
-      setPrompt(amITurn ? 'Pick one of <b>your</b> cards to match.' : "Opponent is matching.");
+      setPrompt(amITurn ? 'Pick one of <b>your</b> cards to match.' : `${oppName()} is matching.`);
     } else if (view.phase === 'swap-select') {
-      setPrompt(amITurn ? 'Pick one of <b>your</b> slots to swap the drawn card in. (Opponent sees only the discarded card.)' : "Opponent is swapping.");
+      setPrompt(amITurn ? `Pick one of <b>your</b> slots to swap the drawn card in. (${oppName()} sees only the discarded card.)` : `${oppName()} is swapping.`);
     } else if (view.phase === 'special') {
       if (amITurn) {
         const mode = view.specialMode;
         if (mode === 'peek') setPrompt('Peek: click one of <b>your</b> cards.');
-        else if (mode === 'spy') setPrompt('Spy: click one of the <b>opponent\'s</b> cards.');
+        else if (mode === 'spy') setPrompt(`Spy: click one of <b>${oppName()}'s</b> cards.`);
         else if (mode === 'blindswap-mine') setPrompt('Blind swap: click one of <b>your</b> cards.');
-        else if (mode === 'blindswap-theirs') setPrompt('Now click one of the <b>opponent\'s</b> cards.');
-        else if (mode === 'king-spy') setPrompt('King: click one of the <b>opponent\'s</b> cards to peek.');
+        else if (mode === 'blindswap-theirs') setPrompt(`Now click one of <b>${oppName()}'s</b> cards.`);
+        else if (mode === 'king-spy') setPrompt(`King: click one of <b>${oppName()}'s</b> cards to peek.`);
         else if (mode === 'king-choose') setPrompt('Saw their card. Click one of <b>your</b> cards to swap, or press <b>End turn</b> to keep.');
         else setPrompt('Press <b>End turn</b> to continue.');
-      } else setPrompt('Opponent is using a special.');
+      } else setPrompt(`${oppName()} is using a special.`);
     }
   }
 
