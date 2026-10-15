@@ -235,6 +235,7 @@
       deckCount: state.deck.length,
       discardTop: state.discard[state.discard.length - 1] || null,
       turn: state.turn, phase: state.phase,
+      specialMode: state.specialMode,
       caboCalledBy: state.caboCalledBy,
       scores: state.scores,
       roundEnd: state.phase === 'round-end' ? state.hands : null,
@@ -377,7 +378,7 @@
           state.specialMode = null;
           state.phase = 'awaiting-draw';
           endTurn();
-          return;
+          break;
         } else if (state.specialMode === 'king-spy' && target.side === 'opp') {
           sendRevealToSeat(seat, [{seat: targetSeat, idx: target.idx, card: slot.card}], 2500);
           state.kingSpied = { seat: targetSeat, idx: target.idx };
@@ -392,7 +393,7 @@
           state.specialMode = null;
           state.phase = 'awaiting-draw';
           endTurn();
-          return;
+          break;
         }
         break;
       }
@@ -402,7 +403,7 @@
         state.kingSpied = null;
         state.phase = 'awaiting-draw';
         endTurn();
-        return;
+        break;
       }
       case 'snap': {
         const top = state.discard[state.discard.length - 1];
@@ -531,6 +532,7 @@
       deckCount: data.deckCount,
       turn: data.turn,
       phase: data.phase,
+      specialMode: data.specialMode,
       caboCalledBy: data.caboCalledBy,
       scores: data.scores,
       roundEnd: data.roundEnd,
@@ -627,7 +629,16 @@
     } else if (view.phase === 'swap-select') {
       setPrompt(amITurn ? 'Pick one of <b>your</b> slots to swap the drawn card in. (Opponent sees only the discarded card.)' : "Opponent is swapping.");
     } else if (view.phase === 'special') {
-      setPrompt(amITurn ? 'Specials in progress — pick a target.' : "Opponent is using a special.");
+      if (amITurn) {
+        const mode = view.specialMode;
+        if (mode === 'peek') setPrompt('Peek: click one of <b>your</b> cards.');
+        else if (mode === 'spy') setPrompt('Spy: click one of the <b>opponent\'s</b> cards.');
+        else if (mode === 'blindswap-mine') setPrompt('Blind swap: click one of <b>your</b> cards.');
+        else if (mode === 'blindswap-theirs') setPrompt('Now click one of the <b>opponent\'s</b> cards.');
+        else if (mode === 'king-spy') setPrompt('King: click one of the <b>opponent\'s</b> cards to peek.');
+        else if (mode === 'king-choose') setPrompt('Saw their card. Click one of <b>your</b> cards to swap, or press <b>End turn</b> to keep.');
+        else setPrompt('Press <b>End turn</b> to continue.');
+      } else setPrompt('Opponent is using a special.');
     }
   }
 
