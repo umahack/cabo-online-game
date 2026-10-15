@@ -23,6 +23,8 @@
   .card.face { background: #fff; color: #111; border-color: #0003; }
   .card.red { color: #c22; }
   .card.gap { background: transparent; border: 2px dashed #8886; cursor: default; }
+  .card.actionable { cursor: pointer; outline: 3px solid #39f; outline-offset: 3px; }
+  .card.actionable:hover { transform: translateY(-4px); box-shadow: 0 4px 12px #39f6; transition: transform 0.1s, box-shadow 0.1s; }
   .card .idx { position: absolute; top: 2px; left: 4px; font-size: 10px; color: #888; font-weight: 400; }
   .piles { display: flex; gap: 12px; justify-content: center; align-items: center; margin: 12px 0; }
   .pile { width: 72px; height: 100px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
@@ -254,6 +256,12 @@
     logMsg(text);
     send({type:'log', text});
   }
+  // Personalized: actorSeat 0 = host, 1 = guest. youText shown to actor, oppText to the other.
+  function logByActor(actorSeat, youText, oppText) {
+    // Host (always running this) is seat 0
+    logMsg(actorSeat === 0 ? youText : oppText);
+    send({type:'log', text: actorSeat === 1 ? youText : oppText});
+  }
 
   function sendRevealToSeat(seat, items, ms) {
     const payload = { type:'reveal', items, ms };
@@ -279,8 +287,11 @@
       }
       case 'discard': {
         if (state.phase !== 'drawn') return;
-        state.discard.push(state.drawn);
-        broadcastLog(`${who(seat)} discarded <b>${label(state.drawn)}</b>.`);
+        const c = state.drawn;
+        state.discard.push(c);
+        logByActor(seat,
+          `You discarded <b>${label(c)}</b>.`,
+          `Opponent discarded <b>${label(c)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -293,7 +304,9 @@
         const old = slot.card;
         slot.card = state.drawn;
         state.discard.push(old);
-        broadcastLog(`${who(seat)} swapped slot ${idx} (discarded <b>${label(old)}</b>).`);
+        logByActor(seat,
+          `You swapped your slot ${idx} — discarded <b>${label(old)}</b>.`,
+          `Opponent swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -316,7 +329,9 @@
         const old = slot.card;
         slot.card = state.drawn;
         state.discard.push(old);
-        broadcastLog(`${who(seat)} swapped slot ${idx} (discarded <b>${label(old)}</b>).`);
+        logByActor(seat,
+          `You swapped your slot ${idx} — discarded <b>${label(old)}</b>.`,
+          `Opponent swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -329,11 +344,16 @@
         if (slot.card.rank === state.drawn.rank) {
           state.discard.push(slot.card);
           state.discard.push(state.drawn);
-          broadcastLog(`✅ ${who(seat)} match-discarded slot ${idx} (<b>${label(slot.card)}</b>) + draw.`);
+          logByActor(seat,
+            `✅ You match-discarded your slot ${idx} (<b>${label(slot.card)}</b>) + your draw.`,
+            `✅ Opponent match-discarded slot ${idx} (<b>${label(slot.card)}</b>) + their draw.`);
           state.hands[seat][idx] = null;
         } else {
-          state.discard.push(state.drawn);
-          broadcastLog(`❌ ${who(seat)} missed match. Slot ${idx} was <b>${label(slot.card)}</b>. +1 penalty card.`);
+          const drawn = state.drawn;
+          state.discard.push(drawn);
+          logByActor(seat,
+            `❌ You missed the match. Your slot ${idx} was <b>${label(slot.card)}</b>. +1 penalty card.`,
+            `❌ Opponent missed the match. Slot ${idx} was <b>${label(slot.card)}</b>. They get a penalty card.`);
           const c = state.deck.pop();
           if (c) state.hands[seat].push({ card: c });
         }
@@ -346,7 +366,9 @@
         const c = state.drawn;
         state.discard.push(c);
         state.drawn = null;
-        broadcastLog(`${who(seat)} played special <b>${label(c)}</b> — ${specialName(c)}.`);
+        logByActor(seat,
+          `You played special <b>${label(c)}</b> — ${specialName(c)}.`,
+          `Opponent played special <b>${label(c)}</b> — ${specialName(c)}.`);
         if (c.rank === 7 || c.rank === 8) { state.phase = 'special'; state.specialMode = 'peek'; }
         else if (c.rank === 9 || c.rank === 10) { state.phase = 'special'; state.specialMode = 'spy'; }
         else if (c.rank === 11 || c.rank === 12) { state.phase = 'special'; state.specialMode = 'blindswap-mine'; state.blindMine = null; }
@@ -373,7 +395,9 @@
           const t = state.hands[seat][mine].card;
           state.hands[seat][mine].card = state.hands[targetSeat][target.idx].card;
           state.hands[targetSeat][target.idx].card = t;
-          broadcastLog(`Blind swap: ${who(seat)} slot ${mine} ↔ ${who(targetSeat)} slot ${target.idx}.`);
+          logByActor(seat,
+            `Blind swap: your slot ${mine} ↔ opponent slot ${target.idx}.`,
+            `Blind swap: opponent slot ${mine} ↔ your slot ${target.idx}.`);
           state.blindMine = null;
           state.specialMode = null;
           state.phase = 'awaiting-draw';
@@ -388,7 +412,9 @@
           const t = state.hands[seat][target.idx].card;
           state.hands[seat][target.idx].card = state.hands[ks.seat][ks.idx].card;
           state.hands[ks.seat][ks.idx].card = t;
-          broadcastLog(`King swap: ${who(seat)} slot ${target.idx} ↔ ${who(ks.seat)} slot ${ks.idx}.`);
+          logByActor(seat,
+            `King swap: your slot ${target.idx} ↔ opponent slot ${ks.idx}.`,
+            `King swap: opponent slot ${target.idx} ↔ your slot ${ks.idx}.`);
           state.kingSpied = null;
           state.specialMode = null;
           state.phase = 'awaiting-draw';
@@ -413,10 +439,14 @@
         if (!slot) return;
         if (slot.card.rank === top.rank) {
           state.discard.push(slot.card);
-          broadcastLog(`✅ ${who(seat)} snapped slot ${idx} (<b>${label(slot.card)}</b>).`);
+          logByActor(seat,
+            `✅ You snapped your slot ${idx} (<b>${label(slot.card)}</b>).`,
+            `✅ Opponent snapped slot ${idx} (<b>${label(slot.card)}</b>).`);
           state.hands[seat][idx] = null;
         } else {
-          broadcastLog(`❌ ${who(seat)} bad snap on slot ${idx} (was <b>${label(slot.card)}</b>). +1 penalty.`);
+          logByActor(seat,
+            `❌ You bad-snapped slot ${idx} (was <b>${label(slot.card)}</b>). +1 penalty.`,
+            `❌ Opponent bad-snapped slot ${idx} (was <b>${label(slot.card)}</b>). They get a penalty card.`);
           const c = state.deck.pop();
           if (c) state.hands[seat].push({ card: c });
         }
@@ -426,7 +456,9 @@
         if (state.phase !== 'awaiting-draw' || state.caboCalledBy !== null) return;
         state.caboCalledBy = seat;
         state.lastCaboTurn = seat;
-        broadcastLog(`<b>${who(seat)} called Cabo!</b>`);
+        logByActor(seat,
+          `<b>You called Cabo!</b>`,
+          `<b>Opponent called Cabo!</b>`);
         endTurn();
         break;
       }
@@ -642,14 +674,31 @@
     }
   }
 
+  function isActionable(side) {
+    if (view.turn !== mySeat) return false;
+    const p = view.phase, sm = view.specialMode;
+    if (side === 'me' && (p === 'drawn' || p === 'swap-select' || p === 'match-select')) return true;
+    if (p === 'special') {
+      if (sm === 'peek' && side === 'me') return true;
+      if (sm === 'spy' && side === 'opp') return true;
+      if (sm === 'blindswap-mine' && side === 'me') return true;
+      if (sm === 'blindswap-theirs' && side === 'opp') return true;
+      if (sm === 'king-spy' && side === 'opp') return true;
+      if (sm === 'king-choose' && side === 'me') return true;
+    }
+    return false;
+  }
+
   function renderHand(elId, hand, side) {
     const el = $(elId);
     el.innerHTML = '';
+    const canAct = isActionable(side);
     for (let i = 0; i < hand.length; i++) {
       const slot = hand[i];
       const d = document.createElement('div');
       d.className = 'card';
       if (slot === null) { d.classList.add('gap'); el.appendChild(d); continue; }
+      if (canAct) d.classList.add('actionable');
       // Round-end full reveal
       if (view.roundEnd) {
         const seat = side === 'me' ? mySeat : (1-mySeat);
