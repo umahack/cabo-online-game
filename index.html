@@ -486,7 +486,7 @@
         const idx = action.idx;
         const slot = state.hands[seat][idx];
         if (!slot) return;
-        if (slot.card.rank === top.rank) {
+        if (slot.card.val === top.val) {
           state.discard.push(slot.card);
           logByActor(seat,
             `✅ You snapped your slot ${idx+1} (<b>${label(slot.card)}</b>).`,
