@@ -39,6 +39,26 @@
   .score { background: #ffd; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
   .prompt { background: #ffe; border: 1px solid #ec8; border-radius: 8px; padding: 10px; margin: 10px 0; text-align: center; font-size: 14px; }
   .hidden { display: none; }
+  @media (max-width: 640px) {
+    body { padding: 10px; }
+    h1 { font-size: 18px; }
+    .sub { font-size: 12px; }
+    .board { grid-template-columns: 1fr; gap: 12px; }
+    .seat { padding: 10px; }
+    .seat h2 { font-size: 14px; }
+    .hand { grid-template-columns: repeat(2, 60px); gap: 6px; }
+    .card { width: 60px; height: 84px; font-size: 18px; }
+    .pile { width: 60px; height: 84px; font-size: 18px; }
+    .pile .lbl { margin-top: 92px; font-size: 10px; }
+    .piles { gap: 8px; margin: 8px 0; }
+    .controls { gap: 6px; margin: 8px 0; }
+    button { padding: 10px 12px; font-size: 13px; }
+    .prompt { padding: 8px; font-size: 13px; }
+    #log { font-size: 12px; max-height: 140px; }
+    #lobby input { width: 100%; margin-top: 4px; box-sizing: border-box; }
+    #lobby button { width: 100%; margin: 6px 0; }
+    #lobby span { display: none; }
+  }
   @media (prefers-color-scheme: dark) {
     body { background: #1a1a1a; color: #eee; }
     .card.face { background: #eee; }
