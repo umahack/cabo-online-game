@@ -337,8 +337,8 @@
         slot.card = state.drawn;
         state.discard.push(old);
         logByActor(seat,
-          `You swapped your slot ${idx} — discarded <b>${label(old)}</b>.`,
-          `{name} swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
+          `You swapped your slot ${idx+1} — discarded <b>${label(old)}</b>.`,
+          `{name} swapped slot ${idx+1} — discarded <b>${label(old)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -362,8 +362,8 @@
         slot.card = state.drawn;
         state.discard.push(old);
         logByActor(seat,
-          `You swapped your slot ${idx} — discarded <b>${label(old)}</b>.`,
-          `{name} swapped slot ${idx} — discarded <b>${label(old)}</b>.`);
+          `You swapped your slot ${idx+1} — discarded <b>${label(old)}</b>.`,
+          `{name} swapped slot ${idx+1} — discarded <b>${label(old)}</b>.`);
         state.drawn = null;
         endTurn();
         break;
@@ -377,14 +377,14 @@
           state.discard.push(slot.card);
           state.discard.push(state.drawn);
           logByActor(seat,
-            `✅ You match-discarded your slot ${idx} (<b>${label(slot.card)}</b>) + your draw.`,
-            `✅ {name} match-discarded slot ${idx} (<b>${label(slot.card)}</b>) + their draw.`);
+            `✅ You match-discarded your slot ${idx+1} (<b>${label(slot.card)}</b>) + your draw.`,
+            `✅ {name} match-discarded slot ${idx+1} (<b>${label(slot.card)}</b>) + their draw.`);
           state.hands[seat][idx] = null;
         } else {
           const drawn = state.drawn;
           state.discard.push(drawn);
           logByActor(seat,
-            `❌ You missed the match. Your slot ${idx} was <b>${label(slot.card)}</b>. +1 penalty card.`,
+            `❌ You missed the match. Your slot ${idx+1} was <b>${label(slot.card)}</b>. +1 penalty card.`,
             `❌ {name} missed the match. Slot ${idx} was <b>${label(slot.card)}</b>. They get a penalty card.`);
           const c = state.deck.pop();
           if (c) state.hands[seat].push({ card: c });
@@ -428,8 +428,8 @@
           state.hands[seat][mine].card = state.hands[targetSeat][target.idx].card;
           state.hands[targetSeat][target.idx].card = t;
           logByActor(seat,
-            `Blind swap: your slot ${mine} ↔ opponent slot ${target.idx}.`,
-            `Blind swap: opponent slot ${mine} ↔ your slot ${target.idx}.`);
+            `Blind swap: your slot ${mine+1} ↔ opponent slot ${target.idx+1}.`,
+            `Blind swap: opponent slot ${mine+1} ↔ your slot ${target.idx+1}.`);
           state.blindMine = null;
           state.specialMode = null;
           state.phase = 'awaiting-draw';
@@ -445,8 +445,8 @@
           state.hands[seat][target.idx].card = state.hands[ks.seat][ks.idx].card;
           state.hands[ks.seat][ks.idx].card = t;
           logByActor(seat,
-            `King swap: your slot ${target.idx} ↔ opponent slot ${ks.idx}.`,
-            `King swap: opponent slot ${target.idx} ↔ your slot ${ks.idx}.`);
+            `King swap: your slot ${target.idx+1} ↔ opponent slot ${ks.idx+1}.`,
+            `King swap: opponent slot ${target.idx+1} ↔ your slot ${ks.idx+1}.`);
           state.kingSpied = null;
           state.specialMode = null;
           state.phase = 'awaiting-draw';
@@ -472,13 +472,13 @@
         if (slot.card.rank === top.rank) {
           state.discard.push(slot.card);
           logByActor(seat,
-            `✅ You snapped your slot ${idx} (<b>${label(slot.card)}</b>).`,
-            `✅ {name} snapped slot ${idx} (<b>${label(slot.card)}</b>).`);
+            `✅ You snapped your slot ${idx+1} (<b>${label(slot.card)}</b>).`,
+            `✅ {name} snapped slot ${idx+1} (<b>${label(slot.card)}</b>).`);
           state.hands[seat][idx] = null;
         } else {
           logByActor(seat,
-            `❌ You bad-snapped slot ${idx} (was <b>${label(slot.card)}</b>). +1 penalty.`,
-            `❌ {name} bad-snapped slot ${idx} (was <b>${label(slot.card)}</b>). They get a penalty card.`);
+            `❌ You bad-snapped slot ${idx+1} (was <b>${label(slot.card)}</b>). +1 penalty.`,
+            `❌ {name} bad-snapped slot ${idx+1} (was <b>${label(slot.card)}</b>). They get a penalty card.`);
           const c = state.deck.pop();
           if (c) state.hands[seat].push({ card: c });
         }
@@ -756,7 +756,7 @@
       }
       const idxEl = document.createElement('span');
       idxEl.className = 'idx';
-      idxEl.textContent = i;
+      idxEl.textContent = 'slot ' + (i + 1);
       d.appendChild(idxEl);
       d.onclick = () => onCardClick(side, i);
       el.appendChild(d);
@@ -779,10 +779,10 @@
   $('btnEndSpecial').onclick = () => send2({type:'end-special'});
   $('btnSnap').onclick = () => {
     // Pick first slot — simplified: prompt which slot to snap
-    const idx = prompt('Snap which of your slots? (0-based index)');
+    const idx = prompt('Snap which of your slots? Enter 1, 2, 3, or 4.');
     const n = parseInt(idx, 10);
-    if (isNaN(n)) return;
-    send2({type:'snap', idx: n});
+    if (isNaN(n) || n < 1) return;
+    send2({type:'snap', idx: n - 1});
   };
 
   function onCardClick(side, idx) {
