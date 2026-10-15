@@ -74,7 +74,7 @@
   <div class="prompt" id="prompt">Waiting…</div>
 
   <div class="controls">
-    <button id="btnDeal" class="primary">Deal</button>
+    <button id="btnDeal" class="primary">Start</button>
     <button id="btnDraw" disabled>Draw</button>
     <button id="btnPlay" disabled>Play special</button>
     <button id="btnSwap" disabled>Swap with my card</button>
@@ -212,7 +212,7 @@
   };
 
   function hostInit() {
-    setPrompt('Click <b>Deal</b> to start a round.');
+    setPrompt('Click <b>Start</b> to start a round.');
     broadcastView();
   }
 
@@ -663,11 +663,11 @@
 
     // Prompt
     if (view.gameOver) {
-      setPrompt(`Game over. Totals ${view.scores[0]} vs ${view.scores[1]}. ${role === 'host' ? 'Click <b>Deal</b> to start a new game.' : ''}`);
+      setPrompt(`Game over. Totals ${view.scores[0]} vs ${view.scores[1]}. ${role === 'host' ? 'Click <b>Start</b> to start a new game.' : ''}`);
     } else if (view.phase === 'idle') {
-      setPrompt(role === 'host' ? 'Click <b>Deal</b> to start.' : 'Waiting for host to deal…');
+      setPrompt(role === 'host' ? 'Click <b>Start</b> to start.' : 'Waiting for host to deal…');
     } else if (view.phase === 'round-end') {
-      setPrompt(role === 'host' ? 'Round complete. Click <b>Deal</b> for next.' : 'Round complete. Waiting on host…');
+      setPrompt(role === 'host' ? 'Round complete. Click <b>Start</b> for next.' : 'Round complete. Waiting on host…');
     } else if (view.phase === 'awaiting-draw') {
       setPrompt(amITurn ? 'Your turn. <b>Draw</b> or call <b>Cabo</b>.' : `${oppName()}'s turn.`);
     } else if (view.phase === 'drawn') {
