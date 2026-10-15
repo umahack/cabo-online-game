@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cabo — 2-Player Online</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; padding: 16px; max-width: 860px; margin-inline: auto; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  .sub { color: #777; font-size: 13px; margin-bottom: 12px; }
+  #lobby { padding: 16px; border: 1px solid #8886; border-radius: 10px; margin-bottom: 12px; }
+  #lobby input { padding: 6px 10px; font-size: 14px; border-radius: 6px; border: 1px solid #8888; }
+  #lobby code { background: #ff9; padding: 2px 8px; border-radius: 6px; font-size: 16px; user-select: all; }
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; }
+  .seat { border: 1px solid #8884; border-radius: 10px; padding: 12px; }
+  .seat.turn { border-color: #39f; box-shadow: 0 0 0 2px #39f3; }
+  .seat h2 { margin: 0 0 8px; font-size: 15px; display: flex; justify-content: space-between; }
+  .hand { display: grid; grid-template-columns: repeat(2, 72px); gap: 8px; justify-content: center; }
+  .card { width: 72px; height: 100px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 600; cursor: pointer; user-select: none; border: 2px solid transparent; position: relative; }
+  .card.back { background: linear-gradient(135deg,#355 25%, #577 25%, #577 50%, #355 50%, #355 75%, #577 75%); color: transparent; }
+  .card.face { background: #fff; color: #111; border-color: #0003; }
+  .card.red { color: #c22; }
+  .card.gap { background: transparent; border: 2px dashed #8886; cursor: default; }
+  .card .idx { position: absolute; top: 2px; left: 4px; font-size: 10px; color: #888; font-weight: 400; }
+  .piles { display: flex; gap: 12px; justify-content: center; align-items: center; margin: 12px 0; }
+  .pile { width: 72px; height: 100px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  .pile .lbl { position: absolute; margin-top: 112px; font-size: 11px; color: #888; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 10px 0; }
+  button { padding: 8px 14px; border-radius: 6px; border: 1px solid #8886; background: #f6f6f6; cursor: pointer; font-size: 14px; }
+  button:hover:not(:disabled) { background: #e8e8e8; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: #39f; color: white; border-color: #39f; }
+  #log { margin-top: 14px; background: #f7f7f7; border-radius: 8px; padding: 10px 14px; font-size: 13px; max-height: 180px; overflow-y: auto; }
+  #log p { margin: 2px 0; }
+  .score { background: #ffd; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .prompt { background: #ffe; border: 1px solid #ec8; border-radius: 8px; padding: 10px; margin: 10px 0; text-align: center; font-size: 14px; }
+  .hidden { display: none; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a1a; color: #eee; }
+    .card.face { background: #eee; }
+    #log { background: #222; }
+    button { background: #333; color: #eee; }
+    button:hover:not(:disabled) { background: #444; }
+    .prompt { background: #332; border-color: #a84; color: #eee; }
+    #lobby code { background: #553; color: #ffd; }
+  }
+</style>
+</head>
+<body>
+<h1>Cabo — 2 Player Online</h1>
+<div class="sub">Peer-to-peer. Share this HTML file with your friend; one hosts, other joins via room code.</div>
+
+<div id="lobby">
+  <div style="margin-bottom:8px"><b>Step 1 — Choose a role:</b></div>
+  <button id="btnHost" class="primary">Host a game</button>
+  <span style="margin:0 8px">or</span>
+  Join code: <input id="joinCode" placeholder="e.g. cabo-abc123" />
+  <button id="btnJoin">Join</button>
+  <div id="lobbyStatus" style="margin-top:10px; font-size:13px; color:#777;"></div>
+</div>
+
+<div id="game" class="hidden">
+  <div class="piles">
+    <div><div class="pile card back" id="deck">🂠</div><div class="lbl">Deck (<span id="deckCount">0</span>)</div></div>
+    <div><div class="pile card face" id="discard">—</div><div class="lbl">Discard</div></div>
+    <div><div class="pile card face" id="drawn"></div><div class="lbl">Your draw</div></div>
+  </div>
+
+  <div class="prompt" id="prompt">Waiting…</div>
+
+  <div class="controls">
+    <button id="btnDeal" class="primary">Deal</button>
+    <button id="btnDraw" disabled>Draw</button>
+    <button id="btnPlay" disabled>Play special</button>
+    <button id="btnDiscardBtn" disabled>Discard</button>
+    <button id="btnMatch" disabled>Match discard</button>
+    <button id="btnSnap" disabled>Snap!</button>
+    <button id="btnCabo" disabled>Call Cabo</button>
+    <button id="btnEndSpecial" disabled>End turn</button>
+  </div>
+
+  <div class="board">
+    <div class="seat" id="seatMe">
+      <h2>You <span class="score">Total: <span id="myScore">0</span></span></h2>
+      <div class="hand" id="myHand"></div>
+    </div>
+    <div class="seat" id="seatOpp">
+      <h2>Opponent <span class="score">Total: <span id="oppScore">0</span></span></h2>
+      <div class="hand" id="oppHand"></div>
+    </div>
+  </div>
+
+  <div id="log"></div>
+</div>
+
+<script>
+(() => {
+  // ---------- Cards ----------
+  const SUITS = ['♠','♣','♦','♥'];
+  function buildDeck() {
+    const d = [];
+    for (const s of SUITS) {
+      for (let r = 1; r <= 13; r++) {
+        let val = r;
+        if (r === 13 && s === '♥') val = -1;
+        d.push({ rank: r, suit: s, val, id: s+r+Math.random().toString(36).slice(2,6) });
+      }
+    }
+    d.push({ rank: 0, suit: '🃏', val: 0, id: 'j1' });
+    d.push({ rank: 0, suit: '🃏', val: 0, id: 'j2' });
+    for (let i = d.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [d[i], d[j]] = [d[j], d[i]];
+    }
+    return d;
+  }
+  const rankStr = c => c.rank === 0 ? 'JK' : ({1:'A',11:'J',12:'Q',13:'K'}[c.rank] || c.rank);
+  const label   = c => c ? (c.rank === 0 ? '🃏' : rankStr(c) + c.suit) : '';
+  const isRed   = c => c && (c.suit === '♥' || c.suit === '♦');
+  const isSpecial = c => {
+    if (c.rank >= 7 && c.rank <= 12) return true;
+    if (c.rank === 13 && c.suit !== '♥') return true;
+    return false;
+  };
+  const specialName = c => {
+    if (c.rank === 7 || c.rank === 8) return 'Peek';
+    if (c.rank === 9 || c.rank === 10) return 'Spy';
+    if (c.rank === 11 || c.rank === 12) return 'Blind swap';
+    if (c.rank === 13) return 'Spy & swap';
+    return '';
+  };
+
+  // ---------- Net ----------
+  let peer = null, conn = null;
+  let role = null;        // 'host' | 'guest'
+  let mySeat = -1;        // 0 or 1
+  const $ = id => document.getElementById(id);
+
+  function setLobbyStatus(s) { $('lobbyStatus').innerHTML = s; }
+  function showGame() { $('lobby').classList.add('hidden'); $('game').classList.remove('hidden'); }
+
+  $('btnHost').onclick = () => {
+    role = 'host'; mySeat = 0;
+    const roomId = 'cabo-' + Math.random().toString(36).slice(2,8);
+    peer = new Peer(roomId);
+    peer.on('open', id => setLobbyStatus(`You are the host. Share this code with your friend: <code>${id}</code><br>Waiting for them to join…`));
+    peer.on('error', e => setLobbyStatus(`Error: ${e.type}. Try a different code or reload.`));
+    peer.on('connection', c => {
+      conn = c;
+      c.on('open', () => {
+        setLobbyStatus('Friend connected! Starting…');
+        setTimeout(() => { showGame(); hostInit(); }, 400);
+        send({type:'init', seat: 1});
+      });
+      c.on('data', msg => hostHandleGuest(msg));
+      c.on('close', () => setPrompt('Opponent disconnected.'));
+    });
+  };
+
+  $('btnJoin').onclick = () => {
+    const code = $('joinCode').value.trim();
+    if (!code) return;
+    role = 'guest';
+    peer = new Peer();
+    peer.on('open', () => {
+      setLobbyStatus('Connecting to host…');
+      conn = peer.connect(code, {reliable: true});
+      conn.on('open', () => {
+        setLobbyStatus('Connected! Waiting for host to deal.');
+        showGame();
+      });
+      conn.on('data', msg => guestHandleHost(msg));
+      conn.on('close', () => setPrompt('Host disconnected.'));
+    });
+    peer.on('error', e => setLobbyStatus(`Error: ${e.type}. Check the code.`));
+  };
+
+  function send(msg) { if (conn && conn.open) conn.send(msg); }
+
+  // ---------- Host-authoritative state ----------
+  const state = {
+    deck: [], discard: [],
+    hands: [[],[]],
+    turn: 0,
+    phase: 'idle',   // idle | awaiting-draw | drawn | match-select | special | round-end
+    drawn: null,
+    specialMode: null,
+    kingSpied: null,
+    blindMine: null,
+    caboCalledBy: null,
+    lastCaboTurn: null,
+    scores: [0,0],
+    gameOver: false,
+  };
+
+  function hostInit() {
+    setPrompt('Click <b>Deal</b> to start a round.');
+  }
+
+  function startRound() {
+    state.deck = buildDeck();
+    state.discard = [];
+    state.hands[0] = Array.from({length:4}, () => ({ card: state.deck.pop() }));
+    state.hands[1] = Array.from({length:4}, () => ({ card: state.deck.pop() }));
+    state.discard.push(state.deck.pop()); // burn
+    state.drawn = null;
+    state.phase = 'awaiting-draw';
+    state.turn = 0;
+    state.caboCalledBy = null;
+    state.lastCaboTurn = null;
+    state.specialMode = null;
+    state.kingSpied = null;
+    broadcastLog('— New round dealt —');
+    // Private peek of 2 nearest for each seat
+    sendRevealToSeat(0, [{seat:0, idx:0, card: state.hands[0][0].card},
+                         {seat:0, idx:1, card: state.hands[0][1].card}], 4000);
+    sendRevealToSeat(1, [{seat:1, idx:0, card: state.hands[1][0].card},
+                         {seat:1, idx:1, card: state.hands[1][1].card}], 4000);
+    broadcastView();
+    setTimeout(broadcastView, 4100);
+  }
+
+  function broadcastView() {
+    const h0view = { me: scrubHand(0, 0), opp: scrubHand(0, 1) };
+    const h1view = { me: scrubHand(1, 1), opp: scrubHand(1, 0) };
+    const base = {
+      type: 'state',
+      deckCount: state.deck.length,
+      discardTop: state.discard[state.discard.length - 1] || null,
+      turn: state.turn, phase: state.phase,
+      caboCalledBy: state.caboCalledBy,
+      scores: state.scores,
+      roundEnd: state.phase === 'round-end' ? state.hands : null,
+      gameOver: state.gameOver,
+    };
+    // Host (seat 0) uses local render
+    applyView(0, { ...base, hands: h0view, drawn: state.turn === 0 ? state.drawn : null });
+    // Guest view
+    send({ ...base, hands: h1view, drawn: state.turn === 1 ? state.drawn : null });
+  }
+  function scrubHand(viewerSeat, targetSeat) {
+    return state.hands[targetSeat].map(s => s ? { hidden: true } : null);
+  }
+
+  function broadcastLog(text) {
+    logMsg(text);
+    send({type:'log', text});
+  }
+
+  function sendRevealToSeat(seat, items, ms) {
+    const payload = { type:'reveal', items, ms };
+    if (seat === 0) applyReveal(payload);
+    else send(payload);
+  }
+
+  // ---------- Host action handling ----------
+  function doAction(seat, action) {
+    if (state.phase === 'idle' || state.phase === 'round-end') {
+      if (action.type === 'deal') { startRound(); return; }
+      return;
+    }
+    if (seat !== state.turn && action.type !== 'snap') return;
+
+    switch (action.type) {
+      case 'draw': {
+        if (state.phase !== 'awaiting-draw') return;
+        if (state.deck.length === 0) refillDeck();
+        state.drawn = state.deck.pop();
+        state.phase = 'drawn';
+        break;
+      }
+      case 'discard': {
+        if (state.phase !== 'drawn') return;
+        state.discard.push(state.drawn);
+        broadcastLog(`${who(seat)} discarded <b>${label(state.drawn)}</b>.`);
+        state.drawn = null;
+        endTurn();
+        break;
+      }
+      case 'swap': {
+        if (state.phase !== 'drawn') return;
+        const idx = action.idx;
+        const slot = state.hands[seat][idx];
+        if (!slot) return;
+        const old = slot.card;
+        slot.card = state.drawn;
+        state.discard.push(old);
+        broadcastLog(`${who(seat)} swapped slot ${idx} (discarded <b>${label(old)}</b>).`);
+        state.drawn = null;
+        endTurn();
+        break;
+      }
+      case 'match-start': {
+        if (state.phase !== 'drawn') return;
+        state.phase = 'match-select';
+        break;
+      }
+      case 'match-pick': {
+        if (state.phase !== 'match-select') return;
+        const idx = action.idx;
+        const slot = state.hands[seat][idx];
+        if (!slot) return;
+        if (slot.card.rank === state.drawn.rank) {
+          state.discard.push(slot.card);
+          state.discard.push(state.drawn);
+          broadcastLog(`✅ ${who(seat)} match-discarded slot ${idx} (<b>${label(slot.card)}</b>) + draw.`);
+          state.hands[seat][idx] = null;
+        } else {
+          state.discard.push(state.drawn);
+          broadcastLog(`❌ ${who(seat)} missed match. Slot ${idx} was <b>${label(slot.card)}</b>. +1 penalty card.`);
+          const c = state.deck.pop();
+          if (c) state.hands[seat].push({ card: c });
+        }
+        state.drawn = null;
+        endTurn();
+        break;
+      }
+      case 'play-special': {
+        if (state.phase !== 'drawn' || !isSpecial(state.drawn)) return;
+        const c = state.drawn;
+        state.discard.push(c);
+        state.drawn = null;
+        broadcastLog(`${who(seat)} played special <b>${label(c)}</b> — ${specialName(c)}.`);
+        if (c.rank === 7 || c.rank === 8) { state.phase = 'special'; state.specialMode = 'peek'; }
+        else if (c.rank === 9 || c.rank === 10) { state.phase = 'special'; state.specialMode = 'spy'; }
+        else if (c.rank === 11 || c.rank === 12) { state.phase = 'special'; state.specialMode = 'blindswap-mine'; state.blindMine = null; }
+        else if (c.rank === 13) { state.phase = 'special'; state.specialMode = 'king-spy'; state.kingSpied = null; }
+        break;
+      }
+      case 'special-target': {
+        if (state.phase !== 'special') return;
+        const target = action; // {side:'me'|'opp', idx}
+        const targetSeat = target.side === 'me' ? seat : 1 - seat;
+        const slot = state.hands[targetSeat][target.idx];
+        if (!slot) return;
+        if (state.specialMode === 'peek' && target.side === 'me') {
+          sendRevealToSeat(seat, [{seat: targetSeat, idx: target.idx, card: slot.card}], 1800);
+          state.specialMode = 'peek-done';
+        } else if (state.specialMode === 'spy' && target.side === 'opp') {
+          sendRevealToSeat(seat, [{seat: targetSeat, idx: target.idx, card: slot.card}], 1800);
+          state.specialMode = 'spy-done';
+        } else if (state.specialMode === 'blindswap-mine' && target.side === 'me') {
+          state.blindMine = target.idx;
+          state.specialMode = 'blindswap-theirs';
+        } else if (state.specialMode === 'blindswap-theirs' && target.side === 'opp') {
+          const mine = state.blindMine;
+          const t = state.hands[seat][mine].card;
+          state.hands[seat][mine].card = state.hands[targetSeat][target.idx].card;
+          state.hands[targetSeat][target.idx].card = t;
+          broadcastLog(`Blind swap: ${who(seat)} slot ${mine} ↔ ${who(targetSeat)} slot ${target.idx}.`);
+          state.blindMine = null;
+          state.specialMode = null;
+          state.phase = 'awaiting-draw';
+          endTurn();
+          return;
+        } else if (state.specialMode === 'king-spy' && target.side === 'opp') {
+          sendRevealToSeat(seat, [{seat: targetSeat, idx: target.idx, card: slot.card}], 2500);
+          state.kingSpied = { seat: targetSeat, idx: target.idx };
+          state.specialMode = 'king-choose';
+        } else if (state.specialMode === 'king-choose' && target.side === 'me') {
+          const ks = state.kingSpied;
+          const t = state.hands[seat][target.idx].card;
+          state.hands[seat][target.idx].card = state.hands[ks.seat][ks.idx].card;
+          state.hands[ks.seat][ks.idx].card = t;
+          broadcastLog(`King swap: ${who(seat)} slot ${target.idx} ↔ ${who(ks.seat)} slot ${ks.idx}.`);
+          state.kingSpied = null;
+          state.specialMode = null;
+          state.phase = 'awaiting-draw';
+          endTurn();
+          return;
+        }
+        break;
+      }
+      case 'end-special': {
+        if (state.phase !== 'special') return;
+        state.specialMode = null;
+        state.kingSpied = null;
+        state.phase = 'awaiting-draw';
+        endTurn();
+        return;
+      }
+      case 'snap': {
+        const top = state.discard[state.discard.length - 1];
+        if (!top) return;
+        const idx = action.idx;
+        const slot = state.hands[seat][idx];
+        if (!slot) return;
+        if (slot.card.rank === top.rank) {
+          state.discard.push(slot.card);
+          broadcastLog(`✅ ${who(seat)} snapped slot ${idx} (<b>${label(slot.card)}</b>).`);
+          state.hands[seat][idx] = null;
+        } else {
+          broadcastLog(`❌ ${who(seat)} bad snap on slot ${idx} (was <b>${label(slot.card)}</b>). +1 penalty.`);
+          const c = state.deck.pop();
+          if (c) state.hands[seat].push({ card: c });
+        }
+        break;
+      }
+      case 'cabo': {
+        if (state.phase !== 'awaiting-draw' || state.caboCalledBy !== null) return;
+        state.caboCalledBy = seat;
+        state.lastCaboTurn = seat;
+        broadcastLog(`<b>${who(seat)} called Cabo!</b>`);
+        endTurn();
+        break;
+      }
+    }
+    broadcastView();
+  }
+
+  function endTurn() {
+    // If Cabo caller just finished their response turn, end round
+    if (state.caboCalledBy !== null) {
+      const caller = state.caboCalledBy;
+      const other = 1 - caller;
+      // The round ends after the other player has had their final turn
+      if (state.turn === other && state.lastCaboTurn !== 'done') {
+        state.lastCaboTurn = 'done';
+        state.turn = other;
+        state.phase = 'awaiting-draw';
+        return;
+      }
+      if (state.lastCaboTurn === 'done') {
+        return finishRound();
+      }
+      state.turn = other;
+      state.phase = 'awaiting-draw';
+      return;
+    }
+    state.turn = 1 - state.turn;
+    state.phase = 'awaiting-draw';
+  }
+
+  function refillDeck() {
+    const top = state.discard.pop();
+    const rest = state.discard;
+    state.discard = top ? [top] : [];
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    state.deck = rest.concat(state.deck);
+  }
+
+  function handTotal(hand) {
+    let s = 0; for (const slot of hand) if (slot) s += slot.card.val; return s;
+  }
+  function finishRound() {
+    const t0 = handTotal(state.hands[0]);
+    const t1 = handTotal(state.hands[1]);
+    const caller = state.caboCalledBy;
+    let msg = `Round over. ${who(0)}: ${t0} · ${who(1)}: ${t1}. `;
+    const totals = [t0, t1];
+    if (caller !== null) {
+      const other = 1 - caller;
+      if (totals[caller] <= totals[other]) {
+        msg += `${who(caller)} won Cabo.`;
+        state.scores[other] += totals[other];
+      } else {
+        msg += `${who(caller)} failed Cabo (+5 penalty).`;
+        state.scores[caller] += totals[caller] + 5;
+        state.scores[other] += totals[other];
+      }
+    } else {
+      state.scores[0] += t0; state.scores[1] += t1;
+    }
+    broadcastLog(msg + ` Totals — ${who(0)}: ${state.scores[0]}, ${who(1)}: ${state.scores[1]}.`);
+    state.phase = 'round-end';
+    if (state.scores[0] > 50 || state.scores[1] > 50) {
+      state.gameOver = true;
+      const winner = state.scores[0] < state.scores[1] ? who(0) : (state.scores[1] < state.scores[0] ? who(1) : 'Tie');
+      broadcastLog(`Game over — ${winner}.`);
+    }
+    broadcastView();
+  }
+
+  function who(seat) {
+    // For log, name both sides neutrally
+    return seat === 0 ? 'Host' : 'Guest';
+  }
+
+  function hostHandleGuest(msg) {
+    if (!msg || !msg.type) return;
+    doAction(1, msg);
+  }
+
+  // ---------- Client view rendering ----------
+  const view = {
+    hands: { me: [], opp: [] },
+    drawn: null,
+    discardTop: null, deckCount: 0,
+    turn: 0, phase: 'idle', caboCalledBy: null,
+    scores: [0,0], roundEnd: null, gameOver: false,
+    reveals: new Map(),  // key `${side}:${idx}` -> {card, until}
+  };
+
+  function applyView(seatForView, data) {
+    // Local-only call for host; seatForView=0
+    doApplyView(data);
+  }
+  function doApplyView(data) {
+    Object.assign(view, {
+      hands: data.hands,
+      drawn: data.drawn,
+      discardTop: data.discardTop,
+      deckCount: data.deckCount,
+      turn: data.turn,
+      phase: data.phase,
+      caboCalledBy: data.caboCalledBy,
+      scores: data.scores,
+      roundEnd: data.roundEnd,
+      gameOver: data.gameOver,
+    });
+    render();
+  }
+  function applyReveal(data) {
+    const now = Date.now();
+    for (const it of data.items) {
+      const side = (it.seat === mySeat) ? 'me' : 'opp';
+      view.reveals.set(`${side}:${it.idx}`, { card: it.card, until: now + data.ms });
+    }
+    render();
+    setTimeout(() => {
+      const t = Date.now();
+      for (const [k, v] of [...view.reveals.entries()]) {
+        if (v.until <= t) view.reveals.delete(k);
+      }
+      render();
+    }, data.ms + 50);
+  }
+
+  function guestHandleHost(msg) {
+    if (!msg || !msg.type) return;
+    if (msg.type === 'init') { mySeat = msg.seat; }
+    else if (msg.type === 'state') doApplyView(msg);
+    else if (msg.type === 'log') logMsg(msg.text);
+    else if (msg.type === 'reveal') applyReveal(msg);
+  }
+
+  // ---------- Rendering ----------
+  function setPrompt(m) { $('prompt').innerHTML = m; }
+  function logMsg(m) {
+    const p = document.createElement('p');
+    p.innerHTML = m;
+    $('log').prepend(p);
+  }
+
+  function render() {
+    $('deckCount').textContent = view.deckCount;
+    $('discard').textContent = view.discardTop ? label(view.discardTop) : '—';
+    $('discard').classList.toggle('red', !!isRed(view.discardTop));
+    const dEl = $('drawn');
+    if (view.drawn) {
+      dEl.textContent = label(view.drawn);
+      dEl.classList.toggle('red', !!isRed(view.drawn));
+      dEl.style.visibility = 'visible';
+    } else { dEl.textContent=''; dEl.style.visibility='hidden'; }
+
+    renderHand('myHand', view.hands.me || [], 'me');
+    renderHand('oppHand', view.hands.opp || [], 'opp');
+
+    const amITurn = view.turn === mySeat;
+    $('seatMe').classList.toggle('turn', amITurn);
+    $('seatOpp').classList.toggle('turn', !amITurn);
+
+    $('myScore').textContent = view.scores[mySeat] ?? 0;
+    $('oppScore').textContent = view.scores[1 - mySeat] ?? 0;
+
+    const canDeal = (view.phase === 'idle' || view.phase === 'round-end') && role === 'host';
+    const canDraw = amITurn && view.phase === 'awaiting-draw';
+    const canPlay = amITurn && view.phase === 'drawn' && isSpecial(view.drawn || {rank:0});
+    const canDiscard = amITurn && view.phase === 'drawn';
+    const canMatch = amITurn && view.phase === 'drawn';
+    const canSnap = view.phase !== 'idle' && view.phase !== 'round-end';
+    const canCabo = amITurn && view.phase === 'awaiting-draw' && view.caboCalledBy === null;
+    const inPeekDone = view.phase === 'special' && amITurn;
+
+    $('btnDeal').disabled = !canDeal;
+    $('btnDraw').disabled = !canDraw;
+    $('btnPlay').disabled = !canPlay;
+    $('btnDiscardBtn').disabled = !canDiscard;
+    $('btnMatch').disabled = !canMatch;
+    $('btnSnap').disabled = !canSnap;
+    $('btnCabo').disabled = !canCabo;
+    $('btnEndSpecial').disabled = !inPeekDone;
+
+    // Prompt
+    if (view.gameOver) {
+      setPrompt(`Game over. Totals ${view.scores[0]} vs ${view.scores[1]}. ${role === 'host' ? 'Click <b>Deal</b> to start a new game.' : ''}`);
+    } else if (view.phase === 'idle') {
+      setPrompt(role === 'host' ? 'Click <b>Deal</b> to start.' : 'Waiting for host to deal…');
+    } else if (view.phase === 'round-end') {
+      setPrompt(role === 'host' ? 'Round complete. Click <b>Deal</b> for next.' : 'Round complete. Waiting on host…');
+    } else if (view.phase === 'awaiting-draw') {
+      setPrompt(amITurn ? 'Your turn. <b>Draw</b> or call <b>Cabo</b>.' : "Opponent's turn.");
+    } else if (view.phase === 'drawn') {
+      setPrompt(amITurn ? `You drew <b>${label(view.drawn)}</b>. Click your card to swap, or Discard / Match / Play special.` : 'Opponent drew a card.');
+    } else if (view.phase === 'match-select') {
+      setPrompt(amITurn ? 'Pick one of <b>your</b> cards to match.' : "Opponent is matching.");
+    } else if (view.phase === 'special') {
+      setPrompt(amITurn ? 'Specials in progress — pick a target.' : "Opponent is using a special.");
+    }
+  }
+
+  function renderHand(elId, hand, side) {
+    const el = $(elId);
+    el.innerHTML = '';
+    for (let i = 0; i < hand.length; i++) {
+      const slot = hand[i];
+      const d = document.createElement('div');
+      d.className = 'card';
+      if (slot === null) { d.classList.add('gap'); el.appendChild(d); continue; }
+      // Round-end full reveal
+      if (view.roundEnd) {
+        const seat = side === 'me' ? mySeat : (1-mySeat);
+        const card = view.roundEnd[seat][i] ? view.roundEnd[seat][i].card : null;
+        if (card) {
+          d.classList.add('face');
+          if (isRed(card)) d.classList.add('red');
+          d.textContent = label(card);
+        }
+      } else {
+        const rev = view.reveals.get(`${side}:${i}`);
+        if (rev && rev.until > Date.now()) {
+          d.classList.add('face');
+          if (isRed(rev.card)) d.classList.add('red');
+          d.textContent = label(rev.card);
+        } else {
+          d.classList.add('back');
+        }
+      }
+      const idxEl = document.createElement('span');
+      idxEl.className = 'idx';
+      idxEl.textContent = i;
+      d.appendChild(idxEl);
+      d.onclick = () => onCardClick(side, i);
+      el.appendChild(d);
+    }
+  }
+
+  // ---------- Local input → actions ----------
+  function send2(action) {
+    if (role === 'host') doAction(0, action);
+    else send(action);
+  }
+
+  $('btnDeal').onclick = () => { if (role === 'host') startRound(); };
+  $('btnDraw').onclick = () => send2({type:'draw'});
+  $('btnDiscardBtn').onclick = () => send2({type:'discard'});
+  $('btnPlay').onclick = () => send2({type:'play-special'});
+  $('btnMatch').onclick = () => send2({type:'match-start'});
+  $('btnCabo').onclick = () => send2({type:'cabo'});
+  $('btnEndSpecial').onclick = () => send2({type:'end-special'});
+  $('btnSnap').onclick = () => {
+    // Pick first slot — simplified: prompt which slot to snap
+    const idx = prompt('Snap which of your slots? (0-based index)');
+    const n = parseInt(idx, 10);
+    if (isNaN(n)) return;
+    send2({type:'snap', idx: n});
+  };
+
+  function onCardClick(side, idx) {
+    if (view.turn !== mySeat) return;
+    if (view.phase === 'drawn' && side === 'me') {
+      send2({type:'swap', idx});
+    } else if (view.phase === 'match-select' && side === 'me') {
+      send2({type:'match-pick', idx});
+    } else if (view.phase === 'special') {
+      send2({type:'special-target', side, idx});
+    }
+  }
+
+  // Initial render for host before game starts
+  render();
+})();
+</script>
+</body>
+</html>
