@@ -175,7 +175,8 @@
     for (const s of SUITS) {
       for (let r = 1; r <= 13; r++) {
         let val = r;
-        if (r === 13 && s === '♥') val = -1;
+        if (r === 1) val = 0;                                   // Ace = 0
+        if (r === 13 && (s === '♥' || s === '♦')) val = -1;     // Red kings = -1
         d.push({ rank: r, suit: s, val, id: s+r+Math.random().toString(36).slice(2,6) });
       }
     }
@@ -192,7 +193,7 @@
   const isRed   = c => c && (c.suit === '♥' || c.suit === '♦');
   const isSpecial = c => {
     if (c.rank >= 7 && c.rank <= 12) return true;
-    if (c.rank === 13 && c.suit !== '♥') return true;
+    if (c.rank === 13 && c.suit !== '♥' && c.suit !== '♦') return true;  // red kings are the -1 cards, not specials
     return false;
   };
   const specialName = c => {
@@ -534,36 +535,17 @@
       case 'cabo': {
         if (state.phase !== 'awaiting-draw' || state.caboCalledBy !== null) return;
         state.caboCalledBy = seat;
-        state.lastCaboTurn = seat;
         logByActor(seat,
           `<b>You called Cabo!</b>`,
           `<b>{name} called Cabo!</b>`);
-        endTurn();
-        break;
+        finishRound();
+        return;
       }
     }
     broadcastView();
   }
 
   function endTurn() {
-    // If Cabo caller just finished their response turn, end round
-    if (state.caboCalledBy !== null) {
-      const caller = state.caboCalledBy;
-      const other = 1 - caller;
-      // The round ends after the other player has had their final turn
-      if (state.turn === other && state.lastCaboTurn !== 'done') {
-        state.lastCaboTurn = 'done';
-        state.turn = other;
-        state.phase = 'awaiting-draw';
-        return;
-      }
-      if (state.lastCaboTurn === 'done') {
-        return finishRound();
-      }
-      state.turn = other;
-      state.phase = 'awaiting-draw';
-      return;
-    }
     state.turn = 1 - state.turn;
     state.phase = 'awaiting-draw';
   }
@@ -585,28 +567,29 @@
   function finishRound() {
     const t0 = handTotal(state.hands[0]);
     const t1 = handTotal(state.hands[1]);
-    const caller = state.caboCalledBy;
-    let msg = `Round over. ${who(0)}: ${t0} · ${who(1)}: ${t1}. `;
     const totals = [t0, t1];
+    const caller = state.caboCalledBy;
+    let msg = `Round over. ${who(0)}: <b>${t0}</b> · ${who(1)}: <b>${t1}</b>. `;
     if (caller !== null) {
+      const callerTotal = totals[caller];
       const other = 1 - caller;
-      if (totals[caller] <= totals[other]) {
-        msg += `${who(caller)} won Cabo.`;
+      if (callerTotal <= 5) {
+        msg += `🏆 <b>${who(caller)} WINS the round!</b> (sum ${callerTotal} ≤ 5)`;
         state.scores[other] += totals[other];
       } else {
-        msg += `${who(caller)} failed Cabo (+5 penalty).`;
-        state.scores[caller] += totals[caller] + 5;
-        state.scores[other] += totals[other];
+        msg += `❌ No winner — ${who(caller)}'s sum ${callerTotal} is more than 5.`;
+        state.scores[0] += t0;
+        state.scores[1] += t1;
       }
     } else {
       state.scores[0] += t0; state.scores[1] += t1;
     }
-    broadcastLog(msg + ` Totals — ${who(0)}: ${state.scores[0]}, ${who(1)}: ${state.scores[1]}.`);
+    broadcastLog(msg + ` Cumulative — ${who(0)}: ${state.scores[0]}, ${who(1)}: ${state.scores[1]}.`);
     state.phase = 'round-end';
     if (state.scores[0] > 50 || state.scores[1] > 50) {
       state.gameOver = true;
       const winner = state.scores[0] < state.scores[1] ? who(0) : (state.scores[1] < state.scores[0] ? who(1) : 'Tie');
-      broadcastLog(`Game over — ${winner}.`);
+      broadcastLog(`🏁 Game over — ${winner}.`);
     }
     broadcastView();
   }
